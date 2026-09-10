@@ -1,0 +1,32 @@
+{
+  "queries": 500,
+  "Normal": 400,
+  "Anomaly": 100,
+  "TP": 99,
+  "TN": 400,
+  "FP": 0,
+  "FN": 1,
+  "invalid_normal": 0,
+  "invalid_anomaly": 0,
+  "invalid_output_rate": 0.0,
+  "precision": 1.0,
+  "recall": 0.99,
+  "f1": 0.9949748743718593,
+  "average_contexts": 0.0,
+  "context_count_distribution": {
+    "0": 500
+  },
+  "context_count_fraction": {
+    "0": 1.0,
+    "1": 0.0,
+    "2": 0.0,
+    "3": 0.0
+  },
+  "average_prompt_tokens": 0,
+  "prompt_token_observations": 0,
+  "average_latency_seconds_uncached": 0.019303734195942526,
+  "latency_observations": 500,
+  "cache_hits": 0,
+  "new_api_calls": 0,
+  "candidate_removal_rate": null
+}

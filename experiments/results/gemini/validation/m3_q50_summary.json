@@ -1,0 +1,27 @@
+{
+  "queries": 200,
+  "Normal": 160,
+  "Anomaly": 40,
+  "TP": 40,
+  "TN": 80,
+  "FP": 80,
+  "FN": 0,
+  "invalid_normal": 0,
+  "invalid_anomaly": 0,
+  "invalid_output_rate": 0.0,
+  "precision": 0.3333333333333333,
+  "recall": 1.0,
+  "f1": 0.5,
+  "average_contexts": 2.015,
+  "context_count_distribution": {
+    "0": 54,
+    "3": 121,
+    "2": 15,
+    "1": 10
+  },
+  "average_prompt_tokens": 751.1,
+  "average_latency_seconds_uncached": 4.805312582387929,
+  "cache_hits": 187,
+  "new_api_calls": 13,
+  "candidate_removal_rate": 0.5
+}

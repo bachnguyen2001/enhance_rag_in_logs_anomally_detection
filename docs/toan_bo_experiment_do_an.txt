@@ -1,0 +1,567 @@
+ĐỀ XUẤT PHƯƠNG PHÁP VÀ KẾ HOẠCH THỰC NGHIỆM
+PHÁT HIỆN BẤT THƯỜNG LOG HDFS BẰNG RAG–LLM
+
+1. MỤC ĐÍCH CỦA TÀI LIỆU
+
+Tài liệu này mô tả phương pháp được đề xuất và kế hoạch chạy thực nghiệm trước khi có kết quả. Các số liệu về cấu trúc và chất lượng dữ liệu là kết quả của giai đoạn Data Understanding. Ngược lại, độ chính xác của các pipeline, threshold tối ưu, số context thực tế, chi phí token và độ trễ vẫn chưa được biết và sẽ được xác định trong thực nghiệm.
+
+Mục tiêu của đồ án là đánh giá liệu việc cung cấp các execution pattern Normal trong lịch sử cho mô hình ngôn ngữ có hỗ trợ phát hiện bất thường log HDFS hay không. Trọng tâm chính là so sánh hai cách sử dụng retrieval:
+
+- Fixed RAG luôn đưa ba context gần nhất vào prompt.
+- Adaptive RAG chỉ đưa những context đạt điều kiện relevance và cho phép số context thay đổi từ 0 đến 3 theo từng query.
+
+Nghiên cứu không nhằm xây dựng một hệ thống production. Code được tổ chức ở mức tối giản, dễ kiểm tra và đủ để tái lập thực nghiệm.
+
+
+2. BÀI TOÁN NGHIÊN CỨU
+
+Mỗi sample là toàn bộ chuỗi log gắn với một BlockId của HDFS. Chuỗi được biểu diễn bằng các EventId theo đúng thứ tự xuất hiện. Nhãn được gán ở cấp BlockId và có hai giá trị: Normal hoặc Anomaly.
+
+Với một BlockId chưa được dùng để huấn luyện hoặc xây knowledge base, hệ thống cần dự đoán một trong hai nhãn:
+
+- NORMAL: execution pattern được xem là bình thường.
+- ANOMALY: execution pattern có dấu hiệu bất thường.
+
+Knowledge base chỉ chứa các pattern Normal thuộc tập train. Cách xây dựng này phù hợp với giả thuyết rằng retrieval sẽ cung cấp cho LLM các hành vi bình thường đã biết để đối chiếu với query hiện tại.
+
+
+3. CĂN CỨ TỪ DATA UNDERSTANDING
+
+3.1. Quy mô và phân bố nhãn
+
+Quá trình kiểm tra dữ liệu xác định được:
+
+- Tổng số BlockIds: 575.061.
+- Normal: 558.223.
+- Anomaly: 16.838.
+- Tỷ lệ Anomaly: khoảng 2,93%.
+- Số EventId/EventTemplate: 29.
+
+Dataset mất cân bằng mạnh. Nếu mô hình luôn dự đoán NORMAL, accuracy vẫn có thể đạt khoảng 97,07%, trong khi Recall và F1 của lớp Anomaly bằng 0. Vì vậy, accuracy không được chọn làm metric chính.
+
+Metric chính của nghiên cứu sẽ là F1 của lớp Anomaly. Precision, Recall và confusion matrix được báo cáo để giải thích rõ nguồn gốc của F1.
+
+3.2. Trace bị lặp nhiều
+
+Toàn bộ dataset có:
+
+- 18.373 unique ordered EventId sequences.
+- 564.097 BlockIds thuộc các sequence xuất hiện nhiều lần.
+- Khoảng 98,1% BlockIds nằm trong một nhóm trace bị lặp.
+
+Nhiều BlockIds vì vậy có cùng một execution pattern. Phát hiện này dẫn đến hai quyết định thiết kế:
+
+- Các trace Normal trong knowledge base sẽ được canonicalize theo exact ordered EventId sequence để không lưu nhiều bản sao giống nhau.
+- Việc chia dữ liệu phải giữ mọi BlockId có cùng exact sequence trong một split nhằm hạn chế overlap giữa train và test.
+
+Canonicalization là bước chuẩn bị dữ liệu dùng chung cho các RAG pipeline. Nó không được xem là đóng góp riêng của Adaptive RAG.
+
+3.3. Ambiguity của EventId sequence
+
+Có 10 unique sequences xuất hiện với cả hai nhãn, bao phủ 46 BlockIds. Như vậy, trong một số rất ít trường hợp, cùng một ordered EventId sequence có thể tương ứng với cả Normal và Anomaly.
+
+Điều này cho thấy EventId sequence không chứa toàn bộ thông tin quyết định nhãn. Thông tin còn thiếu có thể liên quan đến timing, latency, parameters đã bị template hóa, raw message hoặc quy trình gán nhãn.
+
+Thực nghiệm vẫn sử dụng EventId và EventTemplate vì đây là phạm vi representation đã chọn. Những trường hợp conflicting sequence sẽ được xem là giới hạn nội tại của representation khi diễn giải lỗi dự đoán.
+
+3.4. Loại bỏ trường Type
+
+Trạng thái tồn tại hoặc thiếu của trường Type mã hóa trực tiếp nhãn Anomaly trong dữ liệu đã kiểm tra. Nếu đưa Type hoặc một biến biểu diễn sự thiếu vắng của Type vào model input, mô hình có thể suy ra nhãn mà không cần học execution pattern.
+
+Vì vậy, Type và mọi feature được tạo từ trạng thái missing của Type sẽ bị loại khỏi toàn bộ pipeline.
+
+3.5. Tính nhất quán giữa các file
+
+Các file label, event trace, event template và occurrence matrix đã được đối chiếu theo BlockId, label và số lượng event. Không phát hiện trace rỗng, EventId không xác định hoặc sai lệch về event count giữa trace và occurrence matrix.
+
+Ba nội dung chưa được xác minh là quan hệ giữa HDFS.npz và các file CSV, đơn vị của TimeInterval/Latency, và ý nghĩa nghiệp vụ đầy đủ của Type. Chúng không được dùng làm input nên không cản trở phạm vi thực nghiệm hiện tại.
+
+
+4. TIỀN XỬ LÝ VÀ CHIA DỮ LIỆU
+
+4.1. Đơn vị dữ liệu
+
+Một record dùng trong experiment gồm:
+
+- BlockId để định danh và kiểm soát split.
+- Ordered EventId sequence làm cấu trúc chính của trace.
+- EventTemplate dùng để bổ sung ý nghĩa cho EventId.
+- Label dùng cho đánh giá và cho M0, nhưng không được đưa vào knowledge base Normal hoặc prompt của query.
+
+BlockId chỉ là định danh. Nó không được dùng như feature dự đoán.
+
+4.2. Group-by-trace split
+
+Split chính được đề xuất là group-by-trace split v2. Mỗi exact ordered EventId sequence được băm hoặc ánh xạ thành một trace signature. Tất cả BlockIds có cùng signature phải thuộc cùng một tập.
+
+Quy mô split đã chuẩn bị:
+
+- Train: 402.543 BlockIds.
+- Validation: 86.259 BlockIds.
+- Test: 86.259 BlockIds.
+
+Mục đích của cách chia này là ngăn một exact execution pattern xuất hiện dưới các BlockId khác nhau ở cả train và test. Nó tạo ra điều kiện đánh giá nghiêm ngặt hơn cho khả năng xử lý pattern chưa từng thấy chính xác trong train.
+
+Random BlockId split chỉ được dùng trong Data Understanding để minh họa rủi ro overlap. Nó không phải protocol chính để chạy toàn bộ LLM experiment.
+
+4.3. Subset dùng cho LLM experiment
+
+Không cần gọi LLM trên toàn bộ 86.259 BlockIds của test. Hai subset cố định được chuẩn bị:
+
+- Validation: 200 queries, gồm 160 Normal và 40 Anomaly.
+- Test: 500 queries, gồm 400 Normal và 100 Anomaly.
+
+Mọi pipeline M0–M3 và mọi LLM sẽ dùng đúng cùng các BlockIds tương ứng để bảo đảm so sánh theo cặp trên cùng query.
+
+Hai subset có tỷ lệ Anomaly là 20%, cao hơn prevalence 2,93% của toàn dataset. Cách lấy mẫu này giúp có đủ trường hợp Anomaly để so sánh trong giới hạn chi phí API. Vì vậy, Precision và F1 đo trên subset không đại diện trực tiếp cho hiệu năng khi triển khai trên phân bố tự nhiên của HDFS.
+
+
+5. XÂY DỰNG NORMAL KNOWLEDGE BASE
+
+Knowledge base được xây duy nhất từ các BlockId Normal trong tập train. Quy trình dự kiến gồm:
+
+1. Lấy 390.757 Normal train BlockIds.
+2. Nhóm chúng theo exact ordered EventId sequence.
+3. Giữ một canonical trace cho mỗi sequence.
+4. Lưu occurrence_count để biết canonical trace đại diện cho bao nhiêu BlockIds.
+5. Tạo retrieval text từ ordered trace và EventTemplate.
+6. Sinh embedding và lưu embedding cùng metadata.
+
+Sau canonicalization, knowledge base dự kiến có 4.759 canonical Normal traces theo dữ liệu đã chuẩn bị.
+
+Occurrence_count chỉ phục vụ audit và thống kê. Nó không được đưa vào embedding, không thay đổi similarity score và không được chèn vào prompt. Điều này tránh tạo thêm một biến frequency cần nghiên cứu riêng.
+
+M2 và M3 phải dùng cùng một knowledge base và cùng embedding. Nhờ đó, khác biệt giữa hai pipeline chỉ đến từ chính sách chọn context sau retrieval.
+
+
+6. BIỂU DIỄN TRACE VÀ RETRIEVAL
+
+6.1. Nội dung retrieval document
+
+Mỗi canonical trace được chuyển thành một tài liệu ngắn gồm:
+
+- Danh sách EventId và EventTemplate tương ứng.
+- Ordered execution trace.
+- Các lần lặp liên tiếp được viết dưới dạng run-length encoding, ví dụ E5 xuất hiện liên tiếp ba lần được biểu diễn là E5 × 3.
+
+Run-length encoding rút gọn chuỗi nhưng vẫn giữ số lần lặp. Representation không chứa label, Type, timing, BlockId hoặc occurrence_count.
+
+6.2. Embedding và similarity
+
+Retriever dự kiến sử dụng BAAI/bge-small-en-v1.5 để tạo vector 384 chiều. Vector được chuẩn hóa L2, sau đó cosine similarity được dùng để xếp hạng mức gần nhau giữa query và canonical Normal traces.
+
+Embedding được lưu dưới dạng tệp NumPy và nạp trực tiếp vào bộ nhớ khi chạy. Knowledge base chỉ có khoảng 4.759 vectors nên chưa cần một vector database chuyên dụng.
+
+Thực nghiệm hiện tại không sử dụng BM25 hoặc TF-IDF. Việc cố định một retriever giúp tập trung câu hỏi nghiên cứu vào fixed và adaptive context selection.
+
+
+7. CÁC PIPELINE ĐƯỢC ĐỀ XUẤT
+
+7.1. M0 — KNN baseline không dùng LLM
+
+M0 là baseline truyền thống để kiểm tra mức độ phân biệt của event occurrence counts.
+
+Quy trình:
+
+1. Chuyển mỗi BlockId thành vector 29 chiều, trong đó mỗi chiều là số lần một EventId xuất hiện.
+2. Chuẩn hóa L2 vector.
+3. Tính cosine similarity với các labeled samples thuộc train.
+4. Lấy k hàng xóm gần nhất.
+5. Dự đoán bằng label voting.
+
+Các giá trị k ứng viên là 1, 3 và 5. Giá trị k sẽ được chọn trên validation theo thứ tự ưu tiên: anomaly F1 cao nhất, sau đó Recall cao hơn, sau đó k nhỏ hơn. Sau khi chọn, k được khóa trước khi chạy test.
+
+M0 không gọi LLM và chỉ cần chạy một lần. Kết quả M0 được dùng chung khi so sánh với Gemini và Qwen.
+
+Do occurrence vector không giữ thứ tự event, M0 cần một audit riêng. Audit sẽ kiểm tra:
+
+- Không sử dụng Type hoặc feature gây leakage.
+- BlockId train không xuất hiện trong validation/test.
+- Exact ordered trace không chồng giữa các split.
+- Query có thể trùng hướng count vector với train sau chuẩn hóa hay không.
+
+Nếu M0 đạt kết quả cao, audit giúp phân biệt năng lực tổng quát hóa với khả năng dataset chứa nhiều vector count tương đương dù ordered trace khác nhau.
+
+7.2. M1 — LLM-only
+
+M1 đo khả năng của LLM khi chỉ nhìn thấy query hiện tại.
+
+Quy trình:
+
+1. Chuyển query thành representation chứa Event definitions và ordered trace.
+2. Gửi query cho LLM cùng hướng dẫn phân loại.
+3. Yêu cầu LLM trả về JSON gồm label và reason.
+4. Chuẩn hóa output thành NORMAL hoặc ANOMALY.
+
+M1 không truy xuất historical context. Nó là mốc để xác định retrieval có đem lại lợi ích so với suy luận trực tiếp hay không.
+
+7.3. M2 — Fixed top-3 RAG
+
+M2 luôn cung cấp ba canonical Normal traces gần query nhất.
+
+Quy trình:
+
+1. Tạo BGE embedding cho query.
+2. Tính cosine similarity với toàn bộ Normal knowledge base.
+3. Xếp candidates theo similarity giảm dần.
+4. Chọn cố định ba candidates đứng đầu, không áp dụng relevance threshold.
+5. Chèn ba contexts cùng similarity score vào prompt.
+6. Gọi LLM để dự đoán NORMAL hoặc ANOMALY.
+7. Lưu prediction, reason, retrieved evidence, token và latency.
+
+M2 kiểm tra giả thuyết rằng các Normal pattern gần nhất có thể giúp LLM so sánh query với hành vi bình thường trong lịch sử. Tuy nhiên, ba candidates vẫn được đưa vào prompt ngay cả khi similarity thấp. Đây là hạn chế mà M3 được đề xuất để xử lý.
+
+7.4. M3 — Adaptive RAG
+
+M3 dùng cùng query representation, BGE embedding, cosine similarity và Normal knowledge base với M2. Điểm thay đổi duy nhất ở retrieval policy là M3 kiểm tra relevance trước khi chọn context.
+
+Quy trình chi tiết:
+
+Bước 1 — Truy xuất tập candidates
+
+M3 tính similarity giữa query và toàn bộ knowledge base, sau đó lấy top-10 candidates. Việc lấy nhiều hơn ba candidates tạo một tập ban đầu để lọc.
+
+Bước 2 — Xếp hạng evidence
+
+Mười candidates được sắp xếp theo similarity giảm dần. Rank và similarity của từng candidate được giữ lại để audit.
+
+Bước 3 — Kiểm tra relevance
+
+Mỗi candidate được so sánh với một similarity threshold đã chọn trên validation. Candidate chỉ đạt relevance khi similarity lớn hơn hoặc bằng threshold.
+
+Bước 4 — Chọn số context thích ứng
+
+Trong các candidates đạt relevance, M3 lấy tối đa ba candidate có thứ hạng cao nhất. Vì vậy, số context của từng query có thể là 0, 1, 2 hoặc 3.
+
+- Nếu không candidate nào đạt threshold, historical context được để trống.
+- Nếu một candidate đạt threshold, prompt nhận một context.
+- Nếu hai candidates đạt threshold, prompt nhận hai contexts.
+- Nếu từ ba candidates trở lên đạt threshold, prompt nhận ba contexts tốt nhất.
+
+Ngay cả khi không có context, M3 vẫn gọi LLM với query. Trường hợp này không cần một fallback module riêng.
+
+Bước 5 — Tạo prompt và gọi LLM
+
+Prompt gồm query, các contexts đã được chọn và yêu cầu output JSON nhất quán. Khi số context giảm, độ dài prompt dự kiến cũng giảm.
+
+Bước 6 — Lưu toàn bộ bằng chứng
+
+Đối với mỗi query, hệ thống sẽ lưu:
+
+- Danh sách top-10 candidates theo rank.
+- Canonical trace identifier của candidate.
+- Similarity score.
+- Candidate có vượt threshold hay không.
+- Candidate có được chọn làm context hay không.
+- Threshold được áp dụng.
+- Tổng số candidates, số candidates bị lọc và số contexts thực tế.
+- Prompt messages thực tế gửi cho LLM.
+- Prediction và reason.
+- Prompt tokens, completion tokens nếu API cung cấp.
+- Latency, số API calls, số retries và trạng thái cache.
+
+Các artifact này là bằng chứng cho thấy M3 thực sự xếp hạng candidates, lọc theo relevance và thay đổi số context theo query, thay vì chỉ đổi tên M2.
+
+
+8. KHÁC BIỆT GIỮA M2 VÀ M3
+
+Hai pipeline có các thành phần dùng chung:
+
+- Cùng validation/test queries.
+- Cùng Normal knowledge base.
+- Cùng canonical traces.
+- Cùng BGE embedding model.
+- Cùng cosine similarity.
+- Cùng LLM, temperature và output format trong từng lần so sánh.
+
+Khác biệt nằm ở cách quyết định context:
+
+- M2 lấy top-3 và luôn gửi đủ ba context.
+- M3 lấy top-10 candidates, lọc bằng threshold rồi gửi tối đa ba context.
+- Số context của M2 luôn bằng 3.
+- Số context của M3 thay đổi từ 0 đến 3.
+
+Do các thành phần khác được giữ cố định, so sánh M2 với M3 sẽ tập trung vào tác động của relevance filtering và adaptive context count.
+
+M3 không được mặc định là tốt hơn. Đây là giả thuyết cần được kiểm chứng bằng F1, Precision, Recall, số context, prompt tokens và phân tích từng query.
+
+
+9. CHỌN THRESHOLD CHO M3
+
+Threshold chỉ được nghiên cứu trên validation và phải được khóa trước khi chạy test.
+
+Quy trình dự kiến:
+
+1. Chạy retrieval top-10 trên toàn bộ validation subset.
+2. Gộp các similarity scores thu được.
+3. Tạo ba threshold ứng viên tương ứng với Q25, Q50 và Q75 của phân bố score.
+4. Chạy M3 trên cùng 200 validation queries với từng threshold.
+5. So sánh anomaly F1 của ba cấu hình.
+6. Nếu F1 bằng nhau, ưu tiên cấu hình có average contexts thấp hơn.
+7. Nếu vẫn bằng nhau, chọn threshold thấp hơn.
+8. Lưu threshold được chọn thành artifact riêng.
+9. Dùng đúng threshold đã khóa để chạy test một lần.
+
+Threshold được chọn riêng cho từng LLM vì cách LLM phản ứng với số lượng và chất lượng context có thể khác nhau. Không được xem kết quả test rồi quay lại thay threshold.
+
+
+10. CẤU HÌNH LLM
+
+Hai model được đề xuất:
+
+- Gemini 2.5 Flash qua API, với key và cấu hình đặt trong experiments/.env.
+- Qwen2.5-7B-Instruct qua local OpenAI-compatible endpoint.
+
+Mỗi model sẽ chạy M1, M2 và M3. M0 không phụ thuộc LLM nên chỉ chạy một lần.
+
+Để so sánh công bằng trong từng model:
+
+- Temperature được đặt bằng 0.
+- M1–M3 sử dụng cùng query representation.
+- Prompt yêu cầu JSON với label và reason.
+- Pipeline dùng cùng validation/test subset.
+- Cache và thư mục kết quả được tách theo model.
+- Threshold M3 được chọn và lưu riêng theo model.
+
+Trước khi chạy toàn bộ subset, mỗi model sẽ có một smoke test nhỏ để xác minh endpoint, model name, parser và định dạng output.
+
+
+11. KIỂM SOÁT RATE LIMIT VÀ KHẢ NĂNG TIẾP TỤC
+
+Experiment với API cần tránh gửi request liên tục vượt quota. Runner được thiết kế để:
+
+- Nghỉ một khoảng cấu hình được giữa các API calls.
+- Retry với thời gian chờ tăng dần khi gặp lỗi tạm thời hoặc rate limit.
+- Ghi log pipeline, model, tiến độ query, prediction, latency và trạng thái retry.
+- Ghi kết quả từng query ngay khi hoàn tất.
+- Dùng cache để không gọi lại các request đã có kết quả hợp lệ.
+
+Các cơ chế này không thay đổi phương pháp phân loại. Chúng giúp thực nghiệm có thể theo dõi, dừng và chạy tiếp mà không mất toàn bộ tiến độ.
+
+
+12. TRÌNH TỰ CHẠY THỰC NGHIỆM
+
+Giai đoạn A — Chuẩn bị dùng chung
+
+1. Kiểm tra các file đã preprocessing.
+2. Xác nhận group split và không overlap exact ordered trace.
+3. Tạo validation/test subsets cố định.
+4. Xây canonical Normal knowledge base từ train.
+5. Sinh và lưu BGE embeddings.
+6. Chạy audit dữ liệu và retrieval artifacts.
+
+Giai đoạn B — Baseline M0
+
+1. Chạy M0 trên validation cho k bằng 1, 3 và 5.
+2. Chọn và khóa k theo quy tắc đã định.
+3. Chạy M0 trên test.
+4. Xuất predictions, summary và audit artifact.
+
+Giai đoạn C — Validation cho từng LLM
+
+1. Chạy smoke test.
+2. Chạy M1 trên validation.
+3. Chạy M2 trên validation.
+4. Tạo ba threshold candidates cho M3.
+5. Chạy M3 với Q25, Q50 và Q75.
+6. Chọn threshold theo anomaly F1 và context efficiency.
+7. Khóa threshold trước test.
+
+Giai đoạn D — Test cho từng LLM
+
+1. Chạy M1 trên 500 test queries.
+2. Chạy M2 trên đúng 500 queries đó.
+3. Chạy M3 bằng threshold đã khóa trên đúng 500 queries đó.
+4. Không điều chỉnh prompt, threshold hoặc subset dựa trên test result.
+
+Giai đoạn E — Tổng hợp
+
+1. Tính metric cho từng pipeline.
+2. So sánh M1, M2 và M3 trong từng LLM.
+3. Ghép kết quả M0 dùng chung vào bảng tổng hợp.
+4. Phân tích các query M2 sửa đúng hoặc làm sai so với M1.
+5. Phân tích các query M3 sửa đúng hoặc làm sai so với M2.
+6. Báo cáo context distribution, token và latency.
+
+
+13. OUTPUT DỰ KIẾN
+
+13.1. Prediction-level output
+
+Mỗi dòng tương ứng với một BlockId query và dự kiến chứa:
+
+- BlockId và nhãn thật.
+- Nhãn dự đoán và reason.
+- Pipeline và model.
+- Số context thực tế.
+- Prompt/completion token nếu có.
+- Latency.
+- Trạng thái output hợp lệ.
+- Cache hit, số call và retry.
+- Với RAG: rank, candidate identifier, similarity và trạng thái lựa chọn evidence.
+
+Prediction-level output cho phép kiểm tra lại từng quyết định thay vì chỉ dựa trên một bảng metric tổng hợp.
+
+13.2. Summary output
+
+Mỗi pipeline sẽ có một summary gồm:
+
+- Số lượng query và phân bố nhãn của subset.
+- TP, TN, FP và FN.
+- Anomaly Precision, Recall và F1.
+- Accuracy chỉ dùng làm metric phụ.
+- Invalid-output count/rate.
+- Average latency.
+- Average prompt tokens.
+- Average contexts đối với RAG.
+- Context-count distribution và zero-context rate đối với M3.
+
+13.3. Validation artifacts
+
+Các artifact validation dự kiến gồm:
+
+- Kết quả M0 theo từng k.
+- Bảng so sánh threshold Q25, Q50 và Q75 cho từng LLM.
+- Selected-threshold artifact của từng LLM.
+- Predictions và summary của từng threshold.
+- Phân tích M2 giúp hoặc làm hại so với M1.
+
+13.4. Test comparison artifacts
+
+Các artifact test dự kiến gồm:
+
+- Kết quả M0 dùng chung.
+- Kết quả M1, M2 và M3 cho Gemini.
+- Kết quả M1, M2 và M3 cho Qwen.
+- Bảng so sánh các pipeline trong từng model.
+- Bảng so sánh tổng hợp giữa hai model.
+- Phân tích M3 giúp hoặc làm hại so với M2.
+
+13.5. Audit artifacts
+
+Audit cần lưu bằng chứng về:
+
+- Thành phần feature của M0.
+- BlockId overlap giữa train và evaluation subset.
+- Exact ordered trace overlap.
+- Count-vector direction overlap của M0.
+- Thành phần Normal knowledge base.
+- Candidate ranking và relevance filtering của M3.
+- Prompt thực tế và số context thực tế.
+
+
+14. METRICS VÀ Ý NGHĨA
+
+14.1. Precision của lớp Anomaly
+
+Precision cho biết trong các query được dự đoán là Anomaly, bao nhiêu query thực sự là Anomaly. Precision thấp tương ứng với nhiều false positives.
+
+14.2. Recall của lớp Anomaly
+
+Recall cho biết hệ thống phát hiện được bao nhiêu Anomaly trong số các Anomaly thực tế. Recall thấp tương ứng với nhiều bất thường bị bỏ sót.
+
+14.3. F1 của lớp Anomaly
+
+F1 cân bằng Precision và Recall và được dùng làm metric chính do dataset mất cân bằng. Việc chọn k của M0 và threshold của M3 đều dựa trước hết trên validation anomaly F1.
+
+14.4. Confusion matrix
+
+Confusion matrix gồm:
+
+- TP: Anomaly được dự đoán đúng.
+- TN: Normal được dự đoán đúng.
+- FP: Normal bị dự đoán nhầm thành Anomaly.
+- FN: Anomaly bị dự đoán nhầm thành Normal.
+
+Các giá trị này cho phép nhận biết sự thay đổi F1 đến từ việc giảm bỏ sót hay giảm cảnh báo sai.
+
+14.5. Average contexts và context distribution
+
+Average contexts đo lượng historical evidence trung bình được đưa vào prompt. Với M2, giá trị này theo thiết kế là 3. Với M3, cần báo cáo cả trung bình và tỷ lệ query dùng 0, 1, 2 hoặc 3 contexts.
+
+Đây là bằng chứng trực tiếp cho tính adaptive của M3.
+
+14.6. Prompt tokens
+
+Average prompt tokens phản ánh chi phí context quan sát được. Nếu M3 dùng ít context hơn, số prompt tokens được kỳ vọng giảm, nhưng mức giảm thực tế phải được đo từ output của API hoặc tokenizer phù hợp.
+
+14.7. Latency
+
+Average latency mô tả thời gian xử lý trung bình. Latency chịu ảnh hưởng của API, máy local, retry và cache nên cần ghi rõ điều kiện đo. Các dòng lấy từ cache không nên được diễn giải như thời gian inference mới.
+
+
+15. CÂU HỎI NGHIÊN CỨU VÀ GIẢ THUYẾT
+
+RQ1: Việc bổ sung top-3 Normal historical contexts có cải thiện anomaly detection so với LLM-only hay không?
+
+So sánh chính: M2 với M1 trên cùng query và cùng LLM.
+
+Giả thuyết: Normal evidence có thể giúp LLM nhận biết query phù hợp hoặc khác biệt với các execution pattern bình thường. Tuy nhiên, context không liên quan cũng có thể làm sai dự đoán.
+
+RQ2: Relevance filtering và adaptive context count có cải thiện chất lượng so với fixed top-3 RAG hay không?
+
+So sánh chính: M3 với M2 trên cùng query và cùng LLM.
+
+Giả thuyết: M3 có thể tránh đưa evidence similarity thấp vào prompt, từ đó giảm nhiễu. Đây là giả thuyết và chỉ được chấp nhận nếu kết quả test hỗ trợ.
+
+RQ3: M3 có giảm lượng context và prompt tokens hay không?
+
+So sánh chính: average contexts, context distribution và average prompt tokens của M3 với M2.
+
+Giả thuyết: Do cho phép 0–3 contexts, M3 có thể tiết kiệm context ở các query không có đủ evidence liên quan.
+
+RQ4: Baseline occurrence-count KNN mạnh đến mức nào dưới group-by-trace split?
+
+So sánh chính: M0 với các phương pháp LLM, đồng thời đọc kết quả cùng audit về count-vector overlap.
+
+Giả thuyết: Dù exact ordered traces không overlap, nhiều trace vẫn có thể có occurrence vectors giống hoặc cùng hướng. Vì vậy, kết quả M0 cần được giải thích theo representation mà nó sử dụng.
+
+
+16. NGUYÊN TẮC DIỄN GIẢI KẾT QUẢ SAU KHI CHẠY
+
+Trường hợp 1 — M3 có F1 cao hơn M2 và dùng ít token hơn
+
+Kết quả này sẽ hỗ trợ cả giả thuyết về chất lượng relevance filtering và hiệu quả context. Cần dùng phân tích từng query để chỉ ra các trường hợp context similarity thấp bị loại đã thay đổi dự đoán như thế nào.
+
+Trường hợp 2 — M3 có F1 tương đương M2 nhưng dùng ít token hơn
+
+Kết quả này vẫn có giá trị: adaptive policy duy trì chất lượng quan sát được trong khi giảm lượng context. Báo cáo không nên tuyên bố cải thiện độ chính xác nếu chênh lệch không rõ.
+
+Trường hợp 3 — M3 dùng ít token hơn nhưng F1 thấp hơn M2
+
+Threshold có thể đã loại bỏ evidence hữu ích. Khi đó, adaptive filtering tạo ra trade-off giữa chi phí và chất lượng. Không được chỉ báo cáo phần tiết kiệm token mà bỏ qua suy giảm detection.
+
+Trường hợp 4 — M3 gần như luôn chọn ba contexts
+
+Policy chưa thể hiện tính adaptive rõ trên evaluation subset hoặc threshold quá thấp. Context distribution và selected threshold sẽ là bằng chứng để giải thích hiện tượng này.
+
+Trường hợp 5 — Kết quả thay đổi nhiều giữa Gemini và Qwen
+
+Điều này cho thấy tác động của retrieval policy phụ thuộc vào LLM. Kết luận nên trình bày theo từng model, không gộp trung bình để che mất khác biệt.
+
+
+17. PHẠM VI VÀ HẠN CHẾ DỰ KIẾN
+
+- Representation chính chỉ dùng EventId, EventTemplate và thứ tự event; timing, parameters và raw message chưa được khai thác.
+- Có 46 BlockIds thuộc conflicting sequences mà representation EventId không thể phân biệt hoàn toàn.
+- Evaluation subset đã stratify thành 20% Anomaly nên Precision và F1 không phản ánh trực tiếp prevalence thật 2,93%.
+- Chỉ một embedding model và một cosine retriever được dùng; nghiên cứu không so sánh BM25, hybrid retrieval hoặc nhiều vector database.
+- Threshold candidates chỉ gồm ba quantiles để giữ phạm vi experiment gọn.
+- Reason do LLM tạo ra được lưu để audit định tính; metric phân loại vẫn dựa trên label chuẩn hóa.
+- Latency của API và local endpoint chịu ảnh hưởng của hạ tầng tại thời điểm chạy.
+- Experiment trên 500 test queries cung cấp bằng chứng trong phạm vi subset, không tương đương đánh giá toàn bộ 86.259 test BlockIds.
+
+
+18. ĐÓNG GÓP DỰ KIẾN CỦA PHƯƠNG PHÁP
+
+Đóng góp được đề xuất của đồ án là một quy trình RAG–LLM có thể kiểm chứng cho anomaly detection ở cấp BlockId, trong đó:
+
+- Group-by-trace split hạn chế exact execution-pattern overlap.
+- Normal knowledge base được canonicalize để loại bản sao dư thừa.
+- Fixed RAG cung cấp mốc so sánh với ba contexts cố định.
+- Adaptive RAG xếp hạng top-10 candidates, lọc theo relevance và chọn 0–3 contexts theo từng query.
+- Toàn bộ candidate scores, quyết định lọc, prompt, token, latency và prediction được lưu làm bằng chứng.
+- Threshold được chọn trên validation và khóa trước test.
+- Kết quả được đối chiếu với LLM-only và một KNN baseline không dùng LLM.
+
+Đây là thiết kế phương pháp và kế hoạch đánh giá. Tài liệu chưa đưa ra kết luận rằng M3 tốt hơn M2, rằng RAG tốt hơn LLM-only, hoặc rằng một LLM tốt hơn model còn lại. Các kết luận đó chỉ được viết sau khi hoàn tất thực nghiệm và phân tích các artifact đã định trước.

@@ -1,0 +1,24 @@
+*.log
+*.zip
+*.tar.gz
+preprocessed/
+processed/
+processed_v2/
+
+# Model checkpoints, evaluation plots, and logs
+outputs/
+experiments/artifacts/
+model_cache/
+*.bin
+*.safetensors
+*.pt
+*.pth
+EOF
+
+# Python cache & environments
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.env
+venv/
+EOF

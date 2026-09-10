@@ -1,0 +1,133 @@
+{
+  "conclusion": "M0 is strong because EventId occurrence vectors are highly label-separable and many test queries have an identical normalized count-vector direction in training. This is not BlockId or exact ordered-trace leakage; it is a consequence of the lossy count representation.",
+  "feature_audit": {
+    "representation": "29 EventId occurrence counts, independently L2-normalized per BlockId",
+    "included_columns": [
+      "E1",
+      "E2",
+      "E3",
+      "E4",
+      "E5",
+      "E6",
+      "E7",
+      "E8",
+      "E9",
+      "E10",
+      "E11",
+      "E12",
+      "E13",
+      "E14",
+      "E15",
+      "E16",
+      "E17",
+      "E18",
+      "E19",
+      "E20",
+      "E21",
+      "E22",
+      "E23",
+      "E24",
+      "E25",
+      "E26",
+      "E27",
+      "E28",
+      "E29"
+    ],
+    "excluded_fields": [
+      "BlockId",
+      "label",
+      "Type",
+      "TimeInterval",
+      "Latency",
+      "EventTemplate"
+    ],
+    "uses_tfidf_or_fitted_vocabulary": false,
+    "uses_label_derived_features": false,
+    "knn_k": 1,
+    "voting": "distance weighted; stable BlockId order resolves equal-score k=1 ties"
+  },
+  "split_audit": {
+    "train_blocks": 402543,
+    "test_blocks_full_split": 86259,
+    "train_test_block_id_overlap": 0,
+    "train_test_exact_ordered_sequence_overlap": 0,
+    "test_subset_queries": 500,
+    "test_subset_block_ids_all_belong_to_test_split": true
+  },
+  "artifact_audit": {
+    "data_version": "processed_v2/group_trace",
+    "representation_version": "hdfs-rle-v1",
+    "train_ids_sha256": "4f3b30f80c0fe47e2ed27324c1f37a10474e32f6e5d432c8019eac9d0f34dfdd",
+    "train_vectors_sha256": "1664bcc15243fcbfd349f0e2e66983b2f0130e9ec0ab82ada3c55cefe7640291",
+    "test_vectors_sha256": "11835b80b0b615c73b64fd05a14555388b0e880f70a7ddc0b76a197ad9fce68a",
+    "saved_labels_match_train_ids": true,
+    "query_order_matches_predictions": true
+  },
+  "count_vector_overlap": {
+    "train_blocks": 402543,
+    "unique_normalized_train_vectors": 394,
+    "train_blocks_per_unique_vector": 1021.6827411167512,
+    "ambiguous_train_vector_groups": 4,
+    "train_blocks_in_ambiguous_vector_groups": 123,
+    "test_queries_with_exact_normalized_count_match_in_train": 498,
+    "test_exact_match_fraction": 0.996,
+    "test_queries_with_same_label_available_in_exact_match_group": 498,
+    "test_exact_matches_with_ambiguous_train_labels": 2,
+    "test_queries_without_exact_count_match": 2,
+    "exact_match_label_counts": {
+      "NORMAL": 400,
+      "ANOMALY": 98
+    },
+    "exact_match_correct": 498,
+    "exact_match_accuracy": 1.0,
+    "non_exact_label_counts": {
+      "ANOMALY": 2
+    },
+    "non_exact_correct": 1,
+    "non_exact_accuracy": 0.5,
+    "nearest_similarity_for_non_exact_queries": {
+      "count": 2.0,
+      "mean": 0.9792327880859375,
+      "std": 0.01951415944793798,
+      "min": 0.965434193611145,
+      "25%": 0.9723334908485413,
+      "50%": 0.9792327880859375,
+      "75%": 0.9861320853233337,
+      "max": 0.99303138256073
+    }
+  },
+  "observed_result": {
+    "queries": 500,
+    "Normal": 400,
+    "Anomaly": 100,
+    "TP": 99,
+    "TN": 400,
+    "FP": 0,
+    "FN": 1,
+    "invalid_normal": 0,
+    "invalid_anomaly": 0,
+    "invalid_output_rate": 0.0,
+    "precision": 1.0,
+    "recall": 0.99,
+    "f1": 0.9949748743718593,
+    "average_contexts": 0.0,
+    "context_count_distribution": {
+      "0": 500
+    },
+    "average_prompt_tokens": 0,
+    "average_latency_seconds_uncached": 0.022681688768381718,
+    "cache_hits": 0,
+    "new_api_calls": 0,
+    "candidate_removal_rate": null,
+    "selected_k": 1
+  },
+  "interpretation_limits": [
+    "Group-by-trace prevents identical ordered EventId sequences across train and test.",
+    "It does not prevent different ordered sequences from sharing the same event-count vector.",
+    "Therefore a zero-distance M0 neighbor is representation overlap, not duplicate BlockId leakage.",
+    "Only two test queries are unseen under M0's normalized count-vector representation, so the overall score mostly measures lookup of previously observed count patterns.",
+    "Accuracy on the two unseen count directions is descriptive only and too small for a generalization claim.",
+    "The result applies to this HDFS split and count representation; it is not evidence that KNN generalizes to other log datasets."
+  ],
+  "detail_file": "experiments/results/analysis/m0_test_neighbor_audit.csv"
+}

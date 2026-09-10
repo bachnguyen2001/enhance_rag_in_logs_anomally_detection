@@ -1,0 +1,26 @@
+{
+  "BOTH_CORRECT": {
+    "queries": 40,
+    "median_top1_similarity": 0.9929181933403015,
+    "median_mean_top3_similarity": 0.9921445250511169,
+    "median_minimum_top3_similarity": 0.9916842877864838
+  },
+  "BOTH_WRONG": {
+    "queries": 67,
+    "median_top1_similarity": 0.999994158744812,
+    "median_mean_top3_similarity": 0.999987781047821,
+    "median_minimum_top3_similarity": 0.9999811053276062
+  },
+  "RAG_HARM": {
+    "queries": 12,
+    "median_top1_similarity": 0.999909520149231,
+    "median_mean_top3_similarity": 0.9999001622200012,
+    "median_minimum_top3_similarity": 0.9998849630355835
+  },
+  "RAG_HELP": {
+    "queries": 81,
+    "median_top1_similarity": 0.9999874830245972,
+    "median_mean_top3_similarity": 0.9999761581420898,
+    "median_minimum_top3_similarity": 0.9999675750732422
+  }
+}
