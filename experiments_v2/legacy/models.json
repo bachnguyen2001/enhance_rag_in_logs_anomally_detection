@@ -1,0 +1,20 @@
+{
+  "gemini": {
+    "display_name": "Gemini 2.5 Flash",
+    "use_env": true,
+    "api_key_required": true,
+    "reasoning_effort": "none",
+    "json_mode": true,
+    "request_delay_seconds": 4.0
+  },
+  "qwen-local": {
+    "display_name": "Qwen2.5 7B Instruct (local)",
+    "use_env": false,
+    "base_url": "http://192.168.56.1:1234/v1",
+    "model": "qwen2.5-7b-instruct",
+    "api_key_required": false,
+    "reasoning_effort": null,
+    "json_mode": true,
+    "request_delay_seconds": 0.2
+  }
+}

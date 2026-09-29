@@ -1,0 +1,6 @@
+artifacts*/
+results*/
+cache*/
+*.rar
+.env
+__pycache__/

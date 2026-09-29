@@ -1,24 +1,43 @@
-*.log
-*.zip
-*.tar.gz
+# Raw/preprocessed datasets
 preprocessed/
 processed/
 processed_v2/
-
-# Model checkpoints, evaluation plots, and logs
-outputs/
-experiments/artifacts/
-model_cache/
-*.bin
-*.safetensors
-*.pt
-*.pth
-EOF
 
 # Python cache & environments
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
-.env
+.venv/
 venv/
-EOF
+
+# Secrets / local env
+.env
+experiments_v2/.env
+
+# Logs and archives
+*.log
+*.zip
+*.tar.gz
+*.rar
+
+# Model checkpoints / caches
+model_cache/
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Legacy experiment artifacts
+experiments/artifacts/
+outputs/
+
+# experiments_v2 generated artifacts, caches, and bulky outputs
+experiments_v2/artifacts/
+experiments_v2/artifacts_*/
+experiments_v2/cache*/
+experiments_v2/results/
+experiments_v2/results_*/
+experiments_v2/results.rar
+experiments_v2/**/__pycache__/
+
+# Keep source/config/docs/notebooks under experiments_v2 tracked.

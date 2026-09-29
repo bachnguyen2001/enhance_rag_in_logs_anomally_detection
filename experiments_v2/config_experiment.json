@@ -1,0 +1,28 @@
+{
+  "models": ["qwen-local"],
+  "methods": ["m0", "m1", "m2", "m3", "m4", "m5"],
+  "sampling": {
+    "seed": 42,
+    "validation": {"normal": 400, "anomaly": 100},
+    "test": "all"
+  },
+  "knn": {
+    "k_candidates": [1, 3, 5],
+    "feature": "sequence_ngram_hash",
+    "ngram_range": [2, 3],
+    "hash_dim": 1024,
+    "binary": false
+  },
+  "retrieval": {
+    "semantic": {"similarity": "cosine"},
+    "structure_aware": {
+      "semantic": {"similarity": "cosine", "normalization": "cosine_to_01", "weight": 0.5},
+      "template": {"similarity": "jaccard", "weight": 0.2},
+      "sequence": {"similarity": "normalized_lcs", "weight": 0.3}
+    }
+  },
+  "selection": {
+    "fixed": {"contexts_sweep": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+    "adaptive": {"candidate_pool": 10, "threshold_quantiles": [0.25, 0.5, 0.75]}
+  }
+}
