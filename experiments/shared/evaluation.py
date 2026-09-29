@@ -1,4 +1,4 @@
-"""Metrics and result summaries used by all four methods."""
+"""Metrics and result summaries used by all six methods."""
 
 from collections import Counter
 import numpy as np
@@ -37,6 +37,7 @@ def summarize(rows):
         "context_count_distribution": dict(Counter(str(len(row.get("contexts", []))) for row in rows)),
         "average_prompt_tokens": sum(row["prompt_tokens"] for row in observed) / sum(row["request_count"] for row in observed) if observed else 0,
         "average_latency_seconds_uncached": average([row.get("latency_seconds") for row in rows]),
+        "average_query_seconds_uncached": average([row.get("query_seconds_uncached") for row in rows]),
         "cache_hits": sum(row.get("cache_hit", False) for row in rows),
         "new_api_calls": sum(row.get("new_api_calls", 0) for row in rows),
     })

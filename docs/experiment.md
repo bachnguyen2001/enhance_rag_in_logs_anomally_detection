@@ -1,121 +1,75 @@
-# Hướng dẫn experiment M0–M3
+# Experiment Guide
 
-## Dữ liệu cố định
+Tài liệu này mô tả pipeline hiện tại sau khi tái cấu trúc repo.
 
-- Protocol chính: `processed_v2/group_trace`.
-- Validation: 160 Normal + 40 Anomaly.
-- Test: 400 Normal + 100 Anomaly.
-- M2/M3 dùng chung 4.759 canonical Normal train traces.
-- M0 dùng toàn bộ labeled train BlockIds và 29 EventId counts.
+## Protocol hiện tại
 
-Precision và F1 phản ánh subset có 20% Anomaly, không đại diện trực tiếp prevalence 2,93% của HDFS.
+- Package chạy experiment: `experiments/`
+- Config hệ thống: `experiments/configs/config_system.json`
+- Config thiết kế thí nghiệm: `experiments/configs/config_experiment.json`
+- Dataset chính: `data/processed_v2/group_trace`
+- Output local: `experiments/_generated/`
 
-## Code
+Validation dùng để khóa cấu hình. Test chỉ dùng sau khi validation đã khóa.
 
-```text
-experiments/run.py                 điều phối lần chạy
-experiments/shared/data.py         đọc và chuẩn bị dữ liệu
-experiments/shared/retrieval.py    embedding, cosine top-k và KNN
-experiments/shared/llm.py          prompt, API, JSON parser và cache
-experiments/shared/evaluation.py   metrics và summary
-experiments/pipelines/             logic riêng của M0, M1, M2, M3
-```
+## Methods
 
-Pipeline chỉ dự đoán. `run.py` nạp cấu hình và shared resources, gọi pipeline, lưu prediction và metrics.
-Thông tin API nằm trong `experiments/.env`; tham số không bí mật nằm trong `experiments/config.json`.
+| Method | Ý nghĩa |
+|---|---|
+| M0 | Sequence n-gram KNN baseline, không dùng LLM |
+| M1 | LLM-only baseline |
+| M2 | Semantic retrieval + fixed top-k sweep |
+| M3 | Semantic retrieval + adaptive threshold |
+| M4 | Structure-aware retrieval + fixed top-k sweep |
+| M5 | Structure-aware retrieval + adaptive threshold |
 
-## Trình tự chạy
+M2-M5 chạy trên 3 KB variants: `normal`, `anomaly`, `mixed`.
 
-Artifact dữ liệu và BGE embeddings hiện đã tồn tại. Chỉ chạy lại `prepare` và `embed` khi tạo một
-experiment version mới.
+Chi tiết phương pháp nằm trong `docs/METHODS.md`.
 
-Để chạy toàn bộ quy trình theo đúng thứ tự, dùng:
+## Lệnh chạy chính
 
 ```bash
-.venv/bin/python run_experiment.py --models gemini
-.venv/bin/python run_experiment.py --models qwen-local
-.venv/bin/python run_experiment.py --models all
+.venv/bin/python -m experiments.run prepare --model-profile qwen-local
+.venv/bin/python -m experiments.run embed --model-profile qwen-local
+.venv/bin/python -m experiments.run run --model-profile qwen-local --split validation
+.venv/bin/python -m experiments.run report --model-profile qwen-local --split validation
 ```
 
-File này chạy M0 đúng một lần, kiểm tra artifact và cấu hình, chạy smoke test cho từng model,
-chạy M1/M2 validation, tạo phân tích RAG_HELP/RAG_HARM, screening và khóa threshold M3,
-chạy final M1–M3 test rồi tạo
-bảng comparison. Kết quả hợp lệ đã tồn tại được bỏ qua; cache giúp tiếp tục sau khi process dừng.
-
-M0 nằm tại `experiments/results/shared/`. Bảng của Gemini và Qwen đều tham chiếu cùng baseline này;
-không chạy lại KNN khi chuyển model.
-
-Audit M0 có thể tái lập bằng `.venv/bin/python -m scripts.audit_m0`. Kết quả được lưu tại
-`experiments/results/analysis/m0_audit.json` và `m0_test_neighbor_audit.csv`. Audit phân biệt rõ
-ordered-trace overlap của split với count-vector overlap của representation M0.
-
-Hai profile nằm trong `experiments/models.json`: `gemini` đọc URL/model/key từ `.env`, còn
-`qwen-local` gọi `http://192.168.56.1:1234/v1` mà không gửi Authorization header. Mỗi profile có
-cache và `selected_threshold.json` riêng dưới `experiments/artifacts/model_runs/<profile>/`.
+Sau khi validation đã khóa:
 
 ```bash
-# Không gọi LLM API
-.venv/bin/python -m experiments.run run --pipeline m0 --split validation
-.venv/bin/python -m experiments.run run --pipeline m0 --split test
-
-# Có gọi LLM API
-.venv/bin/python -m experiments.run run --pipeline m1 --split test
-.venv/bin/python -m experiments.run run --pipeline m2 --split test
-.venv/bin/python -m experiments.run run --pipeline m3 --split validation
-.venv/bin/python -m experiments.run run --pipeline m3 --split test
-
-# Sau khi đã khóa threshold
-.venv/bin/python -m experiments.run run --pipeline all --split test
-.venv/bin/python -m experiments.run report
+.venv/bin/python -m experiments.run run --model-profile qwen-local --split test
+.venv/bin/python -m experiments.run report --model-profile qwen-local --split test
 ```
 
-M3 validation thử Q25, Q50 và Q75 của pooled top-10 similarity scores. Nó chọn anomaly F1 cao nhất,
-ưu tiên ít context hơn khi hòa, rồi lưu `experiments/artifacts/selected_threshold.json`.
+Không nên dùng `all` trong giai đoạn debug vì nó chạy validation rồi full test.
 
-Mỗi prediction M3 lưu đầy đủ bằng chứng retrieval: top-10 candidate theo đúng rank, trace ID,
-cosine similarity, candidate có đạt threshold hay không và có được đưa vào prompt hay không.
-Record cũng lưu threshold, `context_count`, danh sách context, exact messages, prediction, reason,
-prompt tokens, latency, cache status và số rate-limit retries. Vì vậy có thể kiểm tra lại bốn bước:
-xếp hạng, relevance filtering, số context thích nghi và chi phí prompt thực tế cho từng query.
-Trong khi đang chạy, từng record được flush ngay vào file `*_in_progress.jsonl`. Nếu API hoặc process
-dừng giữa chừng, các bằng chứng đã hoàn thành vẫn còn trên đĩa; khi hoàn tất, runner tạo file
-`*_predictions.jsonl` chính thức và xóa file tạm.
-
-## Artifact và kết quả
+## Output quan trọng
 
 ```text
-experiments/artifacts/
-  manifest.json
-  queries/
-  knn/
-  retrieval/
-  selected_threshold.json
-  llm_cache.jsonl
-experiments/results/
-  gemini/validation/
-  gemini/test/
-  qwen-local/validation/
-  qwen-local/test/
-  model_comparison.csv
-  previous_run/
+experiments/_generated/artifacts_protocol_v4/
+experiments/_generated/results_protocol_v4/
+experiments/_generated/cache_protocol_v4/
 ```
 
-`previous_run/` chỉ dùng đối chiếu với code trước khi tái cấu trúc. Runner mới ghi kết quả chính vào
-`validation/` và `test/`. Mỗi phương pháp tạo predictions JSONL và summary JSON.
+Report tạo:
 
-Metrics gồm anomaly Precision, Recall, F1, TP/TN/FP/FN, số context trung bình, prompt tokens và latency.
-Output không đúng JSON được ghi `INVALID_OUTPUT`, không tự đổi thành một nhãn hợp lệ.
+```text
+comparison_validation*.csv
+comparison*.csv
+confusion_matrices/<split>/
+```
 
-Cache dùng SHA256 của provider, URL, model, prompt, temperature và giới hạn output token.
-Thay prompt hoặc model tạo cache key mới; cache không chứa API key.
+Notebook dashboard:
 
-Trong lúc chạy M1–M3, terminal hiển thị tiến độ mỗi 10 query, prediction gần nhất, số context,
-số API call mới, cache hit và thời gian đã chạy. Có thể đổi tần suất bằng `progress_every` trong
-`experiments/config.json`. Nếu tiến trình bị dừng, chạy lại cùng lệnh; các prompt đã có trong cache
-sẽ không gọi API lần nữa.
+```text
+experiments/notebooks/report_dashboard.ipynb
+```
 
-`llm.request_delay_seconds` đặt khoảng nghỉ giữa hai request thật; mặc định 4 giây. Khi Gemini trả
-HTTP 429, code ưu tiên header `Retry-After`, nếu không có thì chờ tăng dần 10, 20, 40, 80, 120 giây,
-tối đa 5 lần. Cache hit không bị áp dụng khoảng nghỉ. Có thể tăng delay nếu quota tài khoản thấp hơn.
-Lỗi timeout/kết nối và HTTP 500/502/503/504 được thử lại tối đa 3 lần, với khoảng chờ mặc định
-5, 10 và 20 giây. Các lần retry này được ghi trong prediction dưới trường `transient_retries`.
+## Lưu ý reproducibility
+
+- Mọi method dùng cùng query manifest cho cùng split.
+- Label không đi vào embedding text.
+- Adaptive threshold được chọn trên validation, không chọn trên test.
+- Fixed top-k lưu toàn bộ sweep để so sánh, không chỉ một k duy nhất.

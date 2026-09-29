@@ -1,7 +1,7 @@
 # Preprocessing policy — version 2
 
 Data Understanding quyết định cách xử lý dựa trên chất lượng, cấu trúc và rủi ro dữ liệu;
-không lựa chọn preprocessing theo F1 test. `processed/` là v1, `processed_v2/` là v2.
+không lựa chọn preprocessing theo F1 test. `data/processed/` là v1, `data/processed_v2/` là v2.
 Không trộn manifests, KB hoặc kết quả của hai phiên bản.
 
 ## Nguồn và input
@@ -28,14 +28,14 @@ Cả hai protocol dùng seed 42, mục tiêu 70/15/15 theo BlockId và tỷ lệ
   Đây là heuristic, không khẳng định optimum. Thuật toán không dùng model score hoặc tìm seed theo F1.
 
 Group v2 đạt 402.543/86.259/86.259 BlockIds (train/validation/test), không có exact-sequence overlap.
-Anomaly counts là 11.786/2.526/2.526. Config và source hashes nằm trong processed_v2/preprocessing_config.json.
-Experiment chính M0–M3 chỉ dùng Group-by-trace v2. Random split giữ làm tài liệu EDA;
+Anomaly counts là 11.786/2.526/2.526. Config và source hashes nằm trong data/processed_v2/preprocessing_config.json.
+Experiment chính M0–M5 chỉ dùng Group-by-trace v2. Random split giữ làm tài liệu EDA;
 không chạy bộ LLM experiment trên cả hai protocol. Không so model trực tiếp giữa v1/v2.
 
 ## Normal-only knowledge base
 
 Chỉ Normal thuộc train, canonicalize exact ordered sequence và giữ occurrence_count từ Normal train.
-Giữ representative_block_id để truy nguyên. M2–M3 dùng chung KB 4.759 canonical traces của Group-by-trace v2; occurrence_count
+Giữ representative_block_id để truy nguyên. M2–M5 dùng các KB variants 4.759 canonical traces của Group-by-trace v2; occurrence_count
 chỉ để thống kê, không đưa vào embedding/prompt. Dedup không phải đóng góp adaptive.
 Không có exact match không chứng minh Anomaly; có exact match trong Normal KB không chứng minh Normal.
 Chưa tạo embedding/index. Mức giảm số record được đo, lợi ích latency/index bytes chưa được đo.
@@ -60,9 +60,9 @@ và phiên bản thư viện. Script từ chối ghi đè output đã tồn tạ
 scripts/verify_prepared.py và cell 12 trong notebook đọc toàn bộ block_sequences, nguồn CSV, manifests và KB,
 recompute invariants mà không import producer hoặc tin JSON report của producer. Kiểm tra coverage,
 khóa, labels, ordered sequences, template text, group separation, KB counts/payload/representatives
-và annotation correctness. Kết quả kiểm chứng lưu trong outputs/data_understanding/prepared_verification.json.
+và annotation correctness. Kết quả kiểm chứng lưu trong reports/data_understanding/prepared_verification.json.
 
-Thiết kế bốn phương pháp M0–M3 được chốt trong docs/research_design.md; không thêm
-hybrid, structural reranking, router, baseline hoặc ablation frequency. EDA chưa chứng minh representation hoặc pipeline nào tốt hơn.
+Thiết kế các phương pháp M0–M5 được chốt trong docs/research_design.md; không thêm
+router, learned classifier, vector database mới hoặc dataset mới ngoài protocol hiện tại. EDA chưa chứng minh representation hoặc pipeline nào tốt hơn.
 
 Data Understanding đã hoàn tất; không mở rộng phân tích hoặc chạy lại kiểm tra chỉ để viết chương luận văn.

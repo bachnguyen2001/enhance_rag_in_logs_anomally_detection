@@ -1,62 +1,77 @@
-# HDFS Enhanced RAG for Log Anomaly Detection
+# HDFS Log Anomaly Detection
 
-Experiment so sánh M0 KNN, M1 LLM-only, M2 fixed top-3 RAG và M3 adaptive RAG
-trên cùng group-by-trace split v2.
+Repository này chứa pipeline nghiên cứu phát hiện bất thường log HDFS ở mức **BlockId event sequence**.
 
-## Cấu trúc
+Pipeline hiện tại nằm trong package `experiments/` và đánh giá các phương pháp M0-M5:
+
+- M0: sequence n-gram KNN baseline
+- M1: LLM-only baseline
+- M2: semantic retrieval + fixed top-k
+- M3: semantic retrieval + adaptive context
+- M4: structure-aware retrieval + fixed top-k
+- M5: structure-aware retrieval + adaptive context
+
+## Repository layout
 
 ```text
-notebooks/     Data Understanding và giải thích preprocessing
-scripts/       preprocessing có thể tái lập và kiểm thử
-experiments/   runner, bốn pipeline, artifact và kết quả
-docs/          thiết kế nghiên cứu và hướng dẫn
-preprocessed/  CSV nguồn
-processed_v2/  processed dataset và split chính
-tests/         automated tests
+data/
+  raw/              # HDFS.log, HDFS_v1.zip
+  preprocessed/     # parsed CSV files: traces, templates, labels, occurrence matrix
+  processed/        # older prepared dataset version kept for audit
+  processed_v2/     # current prepared dataset and train/validation/test splits
+
+experiments/
+  configs/          # system/runtime config and experiment design config
+  pipelines/        # method implementations: M0, M1, RAG M2-M5
+  shared/           # data, retrieval, structure, LLM, evaluation utilities
+  notebooks/        # experiment report dashboard
+  _generated/       # local artifacts/results/cache, ignored by Git
+  _archive/         # old experimental code, ignored by Git
+
+docs/               # research notes, method protocol, data protocol
+notebooks/          # data understanding / preprocessing notebook
+scripts/            # data preparation and audit scripts
+reports/            # generated EDA/report outputs; not model source code
+tests/              # automated tests
 ```
 
-Notebook [Data Understanding and Preprocessing](notebooks/01_data_understanding_and_preprocessing.ipynb)
-trình bày cả hai nội dung. Final dataset vẫn được tạo bởi `scripts/prepare_data.py`, nhờ vậy
-preprocessing không phụ thuộc vào trạng thái hoặc thứ tự chạy cell.
+`reports/` replaces the old ambiguous `outputs/` folder. It contains generated data-understanding reports, figures, and CSV summaries. It is not part of the model implementation.
 
-## Chạy experiment
-
-Điền API tương thích OpenAI trong `experiments/.env` theo mẫu `experiments/.env.example`:
-
-```dotenv
-LLM_API_KEY=
-LLM_BASE_URL=
-LLM_MODEL=
-```
+## Install
 
 ```bash
-# Chạy riêng từng model
-.venv/bin/python run_experiment.py --models gemini
-.venv/bin/python run_experiment.py --models qwen-local
-
-# Hoặc chạy Gemini xong rồi tự động chạy Qwen local
-.venv/bin/python run_experiment.py --models all
-
-# Chỉ dùng khi tạo artifact mới
-.venv/bin/python -m experiments.run prepare
-.venv/bin/python -m experiments.run embed
-
-# Validation chọn hyperparameter cho một model
-.venv/bin/python -m experiments.run run --model-profile gemini --pipeline m3 --split validation
-
-# Đánh giá test và tạo bảng so sánh
-.venv/bin/python -m experiments.run run --model-profile gemini --pipeline all --split test
-.venv/bin/python -m experiments.run report
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
 
-M0 không dùng LLM nên `run_experiment.py` chỉ chạy một lần và lưu tại `experiments/results/shared/`.
-Mỗi model chạy riêng M1–M3 và tham chiếu cùng M0 trong bảng comparison. Threshold và cache của
-từng model nằm dưới `experiments/artifacts/model_runs/<profile>/`. Vectors là file NumPy cục bộ;
-không cần database service.
+## Experiment commands
 
-Xem [hướng dẫn experiment](docs/experiment.md) và [thiết kế nghiên cứu](docs/research_design.md).
+Local Qwen validation run:
 
-## Kiểm tra
+```bash
+.venv/bin/python -m experiments.run prepare --model-profile qwen-local
+.venv/bin/python -m experiments.run embed --model-profile qwen-local
+.venv/bin/python -m experiments.run run --model-profile qwen-local --split validation
+.venv/bin/python -m experiments.run report --model-profile qwen-local --split validation
+```
+
+Final test should be run only after validation choices are locked:
+
+```bash
+.venv/bin/python -m experiments.run run --model-profile qwen-local --split test
+.venv/bin/python -m experiments.run report --model-profile qwen-local --split test
+```
+
+Avoid `python -m experiments.run all` during development because it runs validation and then full test.
+
+## Important docs
+
+- `docs/METHODS.md`: M0-M5 definitions
+- `docs/DATA_PROTOCOL.md`: train/validation/test, KB construction, label handling
+- `docs/PROJECT_STRUCTURE.md`: file-by-file map
+- `docs/research_design.md`: research design notes
+
+## Tests
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v

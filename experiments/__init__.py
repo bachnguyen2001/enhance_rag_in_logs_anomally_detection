@@ -1,1 +1,1 @@
-"""M0–M3 experiment package."""
+"""M0-M5 HDFS experiments with immutable, shared query manifests."""

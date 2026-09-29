@@ -1,7 +1,7 @@
 """Tạo experimental dataset HDFS từ CSV; không tạo embedding hoặc chạy model.
 
 Chạy: .venv/bin/python -m scripts.prepare_data
-Phụ thuộc: pandas, numpy. Output mặc định: processed_v2/ (phải chưa tồn tại).
+Phụ thuộc: pandas, numpy. Output mặc định: data/processed_v2/ (phải chưa tồn tại).
 Hai protocol dùng chung records, nhưng có manifest và Normal-only KB riêng.
 """
 
@@ -383,8 +383,8 @@ Không lựa chọn preprocessing theo F1 test. Mọi thay đổi policy phải 
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-dir", type=Path, default=root / "preprocessed")
-    parser.add_argument("--output-dir", type=Path, default=root / "processed_v2")
+    parser.add_argument("--data-dir", type=Path, default=root / "data" / "preprocessed")
+    parser.add_argument("--output-dir", type=Path, default=root / "data/processed_v2")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--validation-fraction", type=float, default=.15)
     parser.add_argument("--test-fraction", type=float, default=.15)

@@ -1,6 +1,6 @@
 """Kiểm chứng độc lập CSV xuất ra; không import prepare_data hoặc tin report của nó.
 
-Chạy: .venv/bin/python -m scripts.verify_prepared --prepared-dir processed_v2
+Chạy: .venv/bin/python -m scripts.verify_prepared --prepared-dir data/processed_v2
 Kiểm tra toàn bộ records, raw CSV trace, manifests, Normal KB và annotations.
 """
 
@@ -152,9 +152,9 @@ def verify_prepared(prepared_dir: Path, data_dir: Path, chunksize: int = 20000) 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--prepared-dir", type=Path, default=Path("processed_v2"))
-    parser.add_argument("--data-dir", type=Path, default=Path("preprocessed"))
-    parser.add_argument("--output", type=Path, default=Path("outputs/data_understanding/prepared_verification.json"))
+    parser.add_argument("--prepared-dir", type=Path, default=Path("data/processed_v2"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data/preprocessed"))
+    parser.add_argument("--output", type=Path, default=Path("reports/data_understanding/prepared_verification.json"))
     args = parser.parse_args()
     result = verify_prepared(args.prepared_dir, args.data_dir)
     args.output.parent.mkdir(parents=True, exist_ok=True)

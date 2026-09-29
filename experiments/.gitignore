@@ -1,0 +1,16 @@
+# Local runtime state and generated experiment outputs
+_generated/
+_archive/
+.env
+*.rar
+
+# Python/runtime cache
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Backward-compatible ignores for older layouts
+artifacts*/
+results*/
+cache*/
+legacy/

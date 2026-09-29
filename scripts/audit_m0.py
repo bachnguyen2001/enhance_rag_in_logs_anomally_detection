@@ -39,7 +39,7 @@ def main():
     predictions = {row["block_id"]: row for row in
                    read_jsonl(ROOT / "experiments/results/shared/test/m0_predictions.jsonl")}
 
-    split_dir = ROOT / "processed_v2/group_trace"
+    split_dir = ROOT / "data" / "processed_v2" / "group_trace"
     split_frames = {name: pd.read_csv(split_dir / f"{name}_block_ids.csv")
                     for name in ("train", "validation", "test")}
     train_blocks = set(split_frames["train"].block_id)

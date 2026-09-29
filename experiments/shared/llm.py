@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import time
 
 import httpx
@@ -12,7 +13,8 @@ import httpx
 
 SYSTEM_PROMPT = """You are a system-log anomaly classifier.
 Classify one complete HDFS BlockId event sequence as NORMAL or ANOMALY.
-Historical references, when provided, are verified NORMAL training sequences.
+Historical references, when provided, are training sequences with their ground-truth labels.
+Use each reference's NORMAL or ANOMALY label when comparing it with the query.
 Pay attention to missing, additional, repeated, or differently ordered events.
 Return valid JSON only."""
 
@@ -31,11 +33,17 @@ def load_env(path):
 
 
 def build_messages(query_text, context_texts):
-    references = "\n\n".join(
-        f"REFERENCE {index + 1}:\n{text}" for index, text in enumerate(context_texts)
-    ) or "NONE"
+    rendered = []
+    for index, context in enumerate(context_texts):
+        if isinstance(context, dict):
+            label = context.get("label", "UNKNOWN")
+            text = context["text"]
+            rendered.append(f"REFERENCE {index + 1} — LABEL: {label}\n{text}")
+        else:
+            rendered.append(f"REFERENCE {index + 1}:\n{context}")
+    references = "\n\n".join(rendered) or "NONE"
     user = (
-        f"HISTORICAL NORMAL REFERENCES:\n{references}\n\n"
+        f"LABELED HISTORICAL REFERENCES:\n{references}\n\n"
         f"QUERY BLOCK SEQUENCE:\n{query_text}\n\n"
         'Return: {"label":"NORMAL or ANOMALY","reason":"one short sentence"}'
     )
@@ -43,6 +51,12 @@ def build_messages(query_text, context_texts):
 
 
 def parse_prediction(text):
+    text = text.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.IGNORECASE | re.DOTALL)
+    if fenced:
+        text = fenced.group(1).strip()
+    elif "{" in text and "}" in text:
+        text = text[text.find("{"):text.rfind("}") + 1]
     try:
         value = json.loads(text)
         label = value["label"].strip().upper()
@@ -52,6 +66,23 @@ def parse_prediction(text):
     except (ValueError, TypeError, KeyError, AttributeError):
         pass
     return "INVALID_OUTPUT", ""
+
+
+def messages_to_input(messages):
+    parts = []
+    for message in messages:
+        role = message.get("role", "user").upper()
+        parts.append(f"{role}:\n{message.get('content', '')}")
+    return "\n\n".join(parts)
+
+
+def response_content(data, payload_format):
+    if payload_format == "input_text":
+        for item in data.get("output", []):
+            if item.get("type") == "message" and item.get("content"):
+                return item["content"]
+        return ""
+    return data["choices"][0]["message"].get("content") or ""
 
 
 class ChatLLM:
@@ -69,6 +100,12 @@ class ChatLLM:
                     self.cache[row["cache_key"]] = row["result"]
         self.client = client or httpx.Client(timeout=config.get("timeout_seconds", 90))
         self.last_request_at = None
+
+    def _chat_url(self):
+        path = self.config.get("chat_path", "/chat/completions")
+        if not path.startswith("/"):
+            path = "/" + path
+        return self.config["base_url"].rstrip("/") + path
 
     def close(self):
         self.client.close()
@@ -94,7 +131,7 @@ class ChatLLM:
                        if self.config.get("api_key_required", True) and key else {})
             try:
                 response = self.client.post(
-                    self.config["base_url"].rstrip("/") + "/chat/completions",
+                    self._chat_url(),
                     headers=headers, json=body,
                 )
                 self.last_request_at = time.perf_counter()
@@ -149,6 +186,8 @@ class ChatLLM:
         payload = {
             "provider": self.config.get("provider", "openai-compatible"),
             "base_url": self.config["base_url"], "model": self.config["model"],
+            "chat_path": self.config.get("chat_path", "/chat/completions"),
+            "payload_format": self.config.get("payload_format", "chat_completions"),
             "messages": messages, "temperature": self.config.get("temperature"),
             "max_output_tokens": self.config.get("max_output_tokens", 128),
             "output_token_parameter": self.config.get("output_token_parameter", "max_tokens"),
@@ -169,13 +208,18 @@ class ChatLLM:
         start = time.perf_counter()
         label, reason = "INVALID_OUTPUT", ""
         for attempt in range(2):
-            body = {"model": self.config["model"], "messages": conversation,
-                    self.config.get("output_token_parameter", "max_completion_tokens"): self.config.get("max_output_tokens", 128)}
+            payload_format = self.config.get("payload_format", "chat_completions")
+            if payload_format == "input_text":
+                body = {"model": self.config["model"], "input": messages_to_input(conversation),
+                        "max_output_tokens": self.config.get("max_output_tokens", 128)}
+            else:
+                body = {"model": self.config["model"], "messages": conversation,
+                        self.config.get("output_token_parameter", "max_completion_tokens"): self.config.get("max_output_tokens", 128)}
             if self.config.get("temperature") is not None:
                 body["temperature"] = self.config["temperature"]
-            if self.config.get("reasoning_effort") is not None:
+            if payload_format != "input_text" and self.config.get("reasoning_effort") is not None:
                 body["reasoning_effort"] = self.config["reasoning_effort"]
-            if self.config.get("json_mode", True):
+            if payload_format != "input_text" and self.config.get("json_mode", True):
                 body["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
@@ -196,8 +240,13 @@ class ChatLLM:
             rate_limit_retries += rate_retries
             transient_retries += network_retries
             data = response.json()
-            content = data["choices"][0]["message"].get("content") or ""
-            attempts.append({"content": content, "usage": data.get("usage", {}), "response_model": data.get("model")})
+            content = response_content(data, payload_format)
+            usage = data.get("usage", {})
+            if payload_format == "input_text" and "stats" in data:
+                usage = {"prompt_tokens": data["stats"].get("input_tokens"),
+                         "completion_tokens": data["stats"].get("total_output_tokens")}
+            attempts.append({"content": content, "usage": usage,
+                             "response_model": data.get("model") or data.get("model_instance_id")})
             label, reason = parse_prediction(content)
             if label != "INVALID_OUTPUT":
                 break

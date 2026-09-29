@@ -1,7 +1,11 @@
-# Raw/preprocessed datasets
-preprocessed/
-processed/
-processed_v2/
+# Data and generated reports
+reports/
+data/raw/
+
+# Keep prepared CSV data local by default; remove these ignores if the dataset must be versioned.
+data/preprocessed/
+data/processed/
+data/processed_v2/
 
 # Python cache & environments
 __pycache__/
@@ -12,7 +16,7 @@ venv/
 
 # Secrets / local env
 .env
-experiments_v2/.env
+experiments/.env
 
 # Logs and archives
 *.log
@@ -27,17 +31,17 @@ model_cache/
 *.pt
 *.pth
 
-# Legacy experiment artifacts
+# Experiment generated artifacts, caches, and bulky outputs
+experiments/_generated/
+experiments/_archive/
 experiments/artifacts/
+experiments/artifacts_*/
+experiments/cache*/
+experiments/results/
+experiments/results_*/
+experiments/results.rar
+experiments/**/__pycache__/
+
+# Older root-level generated folders if recreated
+artifacts/
 outputs/
-
-# experiments_v2 generated artifacts, caches, and bulky outputs
-experiments_v2/artifacts/
-experiments_v2/artifacts_*/
-experiments_v2/cache*/
-experiments_v2/results/
-experiments_v2/results_*/
-experiments_v2/results.rar
-experiments_v2/**/__pycache__/
-
-# Keep source/config/docs/notebooks under experiments_v2 tracked.

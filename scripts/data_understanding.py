@@ -1,7 +1,7 @@
 """Khám phá HDFS trước khi xây dựng Enhanced RAG cho log anomaly detection.
 
 Chạy: python -m scripts.data_understanding
-Phụ thuộc: pandas, numpy, matplotlib (requirements-data-understanding.txt).
+Phụ thuộc: pandas, numpy, matplotlib (requirements.txt).
 Không sửa dữ liệu nguồn, không huấn luyện mô hình, không xây retrieval index.
 Các thống kê nhãn chỉ phục vụ EDA; không đưa nhãn/Type vào query của mô hình.
 """
@@ -325,8 +325,8 @@ phải dựa trên train/validation và giữ test độc lập.
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-dir", type=Path, default=root / "preprocessed")
-    parser.add_argument("--output-dir", type=Path, default=root / "outputs" / "data_understanding")
+    parser.add_argument("--data-dir", type=Path, default=root / "data" / "preprocessed")
+    parser.add_argument("--output-dir", type=Path, default=root / "reports" / "data_understanding")
     parser.add_argument("--chunksize", type=int, default=20000)
     args = parser.parse_args()
     if args.chunksize <= 0:
